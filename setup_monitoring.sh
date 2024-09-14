@@ -122,8 +122,12 @@ echo "Verifying permissions for 'monitoring' directory..."
 ls -ld ~/monitoring
 ls -l ~/monitoring/data/prometheus/config
 
+sudo systemctl restart docker
+newgrp docker
+
 echo "Starting Docker Compose stack..."
 cd ~/monitoring
 docker-compose up -d
 
 echo "Monitoring setup completed successfully!"
+docker ps
