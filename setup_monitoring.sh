@@ -110,7 +110,7 @@ scrape_configs:
   - job_name: 'prometheus'
     scrape_interval: 60s
     static_configs:
-      - targets: ['$SERVER_IP:9091', 'cadvisor:8080', 'node-exporter:9100', 'nginx-exporter:9113'] 
+      - targets: ['$SERVER_IP:9091', 'cadvisor:8080', 'node-exporter:9100'] 
 EOF
 
 # Change directory permissions to allow user access as root, this is very important because otherwise the privileged of the docker-compose won't work and it will break the cadvisor container.
@@ -131,3 +131,20 @@ docker-compose up -d
 
 echo "Monitoring setup completed successfully!"
 docker ps
+
+sleep 20
+
+echo "Creating Grafana API key..."
+API_KEY=$(curl -X POST "http://admin:admin@$SERVER_IP:3000/api/auth/keys" \
+    -H "Content-Type: application/json" \
+    -d '{
+          "name":"MyAPIKey",
+          "role":"Admin"
+        }' | jq -r '.key')
+
+if [ -z "$API_KEY" ]; then
+    echo "Failed to create Grafana API Key."
+else
+    echo "Grafana API Key created successfully: $API_KEY"
+    echo "Please take note of this Grafana API key and add it to your grafana.env to link it !"
+fi
