@@ -1,40 +1,49 @@
 #!/bin/bash
 
-echo "Installing Docker..."
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl gnupg lsb-release
+# Ask the user if they want to install Docker
+read -p "Do you want to install Docker and start the service? (y/n): " user_input
 
-curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+# Conditional check based on user input
+if [[ "$user_input" == "y" || "$user_input" == "Y" ]]; then
+  echo "Installing Docker..."
+  sudo apt-get update
+  sudo apt-get install -y ca-certificates curl gnupg lsb-release
 
-echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+  curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
 
-sudo apt-get update
-sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
-sudo docker --version
+  echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-echo "Installing Docker Compose..."
-sudo curl -L "https://github.com/docker/compose/releases/download/v2.12.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-sudo chmod +x /usr/local/bin/docker-compose
-docker-compose --version
+  sudo apt-get update
+  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+  sudo docker --version
 
-echo "Trying to run the Docker service..."
-sudo systemctl start docker
-sudo systemctl enable docker
-sudo systemctl status docker --no-pager
-echo "Docker services are running successfully."
+  echo "Installing Docker Compose..."
+  sudo curl -L "https://github.com/docker/compose/releases/download/v2.12.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+  sudo chmod +x /usr/local/bin/docker-compose
+  docker-compose --version
 
-# Check if the user is part of the Docker group
-echo "Checking if the user is part of the Docker group..."
-sudo usermod -aG docker $USER
-sudo systemctl restart docker
-echo "User $USER is now part of the Docker group, you do not need to use sudo anymore."
+  echo "Trying to run the Docker service..."
+  sudo systemctl start docker
+  sudo systemctl enable docker
+  sudo systemctl status docker --no-pager
+  echo "Docker services are running successfully."
+
+  # Check if the user is part of the Docker group
+  echo "Checking if the user is part of the Docker group..."
+  sudo usermod -aG docker $USER
+  sudo systemctl restart docker
+  echo "User $USER is now part of the Docker group, you do not need to use sudo anymore."
+fi
+
 
 # Creating the directory structure for monitoring
 echo "Setting up monitoring directory..."
-mkdir -p ~/monitoring/data/prometheus/config ~/monitoring/data/prometheus/data ~/monitoring/data/grafana
+mkdir -p monitoring/data/prometheus/config monitoring/data/prometheus/data monitoring/data/grafana
 
 echo "Creating docker-compose.yml..."
-cat <<EOF > ~/monitoring/docker-compose.yml
+cat <<EOF > monitoring/docker-compose.yml
+version: '3'
+
 services:
   prometheus: 
     image: prom/prometheus:latest
@@ -71,7 +80,7 @@ services:
       - /sys:/sys:ro
       - /var/lib/docker/:/var/lib/docker:ro
     ports:
-      - "8080:8080"
+      - "80:8080"
     privileged: true
     expose: 
       - 8080
@@ -94,7 +103,7 @@ SERVER_IP=$(hostname -I | awk '{print $1}')
 
 # Here we used dynamic IP replacement when it came to the server's IP
 echo "Creating prometheus.yml..."
-cat <<EOF > ~/monitoring/data/prometheus/config/prometheus.yml
+cat <<EOF >  monitoring/data/prometheus/config/prometheus.yml
 global: 
   scrape_interval: 60s
   evaluation_interval: 60s
@@ -115,36 +124,18 @@ EOF
 
 # Change directory permissions to allow user access as root, this is very important because otherwise the privileged of the docker-compose won't work and it will break the cadvisor container.
 echo "Granting permissions to the monitoring directory..."
-cd ~
-sudo chmod -R 777 ~/monitoring
+
+sudo chmod -R 777  monitoring
 
 echo "Verifying permissions for 'monitoring' directory..."
-ls -ld ~/monitoring
-ls -l ~/monitoring/data/prometheus/config
+ls -ld  monitoring
+ls -l  monitoring/data/prometheus/config
 
-sudo systemctl restart docker
-newgrp docker
 
 echo "Starting Docker Compose stack..."
-cd ~/monitoring
+cd  monitoring
+docker-compose build --no-cache
 docker-compose up -d
 
 echo "Monitoring setup completed successfully!"
 docker ps
-
-sleep 20
-
-echo "Creating Grafana API key..."
-API_KEY=$(curl -X POST "http://admin:admin@$SERVER_IP:3000/api/auth/keys" \
-    -H "Content-Type: application/json" \
-    -d '{
-          "name":"MyAPIKey",
-          "role":"Admin"
-        }' | jq -r '.key')
-
-if [ -z "$API_KEY" ]; then
-    echo "Failed to create Grafana API Key."
-else
-    echo "Grafana API Key created successfully: $API_KEY"
-    echo "Please take note of this Grafana API key and add it to your grafana.env to link it !"
-fi
